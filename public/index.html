@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Shared Clipboard (WebSocket Edition)</title>
+        <link rel="stylesheet" href="style.css">
+        <script src="moment.js"></script>
+        <script src="reconnecting-websocket.js"></script>
+        <script src="application.js"></script>
+    </head>
+    <body>
+        <textarea name="clipboard"></textarea>
+        <div class="control-bar">
+            <p name="status">Status: Ready</p>
+            <div>
+                <button name="clear">Clear</button>
+                <button name="undo-clear">Undo Clear</button>
+                <button name="insert-date">Insert Date</button>
+                <button name="insert-time">Insert Time</button>
+                <button name="insert-date-time">Insert Date &amp Time</button>
+            </div>
+        </div>
+    </body>
+</html>

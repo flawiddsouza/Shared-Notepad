@@ -1,0 +1,15 @@
+{
+  "name": "shared_clipboard_websocket_edition",
+  "version": "1.0.0",
+  "description": "share text between devices in realtime",
+  "private": true,
+  "main": "app.js",
+  "author": "Flawid D'Souza",
+  "license": "MIT",
+  "dependencies": {
+    "body-parser": "^1.17.2",
+    "express": "^4.15.4",
+    "jsonfile": "^2.4.0",
+    "ws": "^1.1.4"
+  }
+}

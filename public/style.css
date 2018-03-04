@@ -1,0 +1,37 @@
+body {
+    margin: 1em;
+    background-color: white;
+    font-family: Arial, serif;
+    font-size: 1em;
+    height: 98vh;
+}
+
+textarea {
+    padding: 0;
+    width: 100vw;
+    height: 87%;
+    max-width:100%;
+    font-size: 1.2em;
+}
+
+p {
+    display: inline-block
+}
+
+button {
+    padding: 0.5em;
+    margin-right: 0.5em;
+}
+
+/* Moto G */
+@media screen and (device-width: 360px) and (device-height: 640px) and (-webkit-device-pixel-ratio: 2) {
+    body {
+        height: 92vh;
+    }
+    textarea {
+        height: 70%;
+    }
+    button {
+        margin-bottom: 1em;
+    }
+}
