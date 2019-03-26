@@ -4,6 +4,7 @@ body {
     font-family: Arial, serif;
     font-size: 1em;
     height: 98vh;
+    margin-bottom: 0;
 }
 
 textarea {
