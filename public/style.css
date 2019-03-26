@@ -36,3 +36,16 @@ button {
         margin-bottom: 1em;
     }
 }
+
+/* OnePlus 6 */
+@media only screen and (max-width : 1080px) and (max-height : 1920px) {
+    body {
+        height: 92vh;
+    }
+    textarea {
+        height: 75%;
+    }
+    button {
+        margin-bottom: 1em;
+    }
+}
