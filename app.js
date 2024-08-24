@@ -54,7 +54,7 @@ var app = express()
 var bodyParser = require('body-parser')
 
 app.use(express.static(__dirname + '/public')) // houses "index.html"
-app.use(bodyParser.urlencoded({ extended: false }))
+app.use(bodyParser.urlencoded({ extended: false, limit: '50mb' }))
 
 const WebSocket = require('ws')
 const ws = new WebSocket('ws://:9873')
