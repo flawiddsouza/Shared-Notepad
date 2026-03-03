@@ -1,15 +1,27 @@
 {
-  "name": "shared_clipboard_websocket_edition",
+  "name": "shared-notepad",
   "version": "1.0.0",
   "description": "share text between devices in realtime",
   "private": true,
+  "type": "module",
   "main": "app.js",
   "author": "Flawid D'Souza",
   "license": "MIT",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "start": "node app.js"
+  },
   "dependencies": {
-    "body-parser": "^1.17.2",
-    "express": "^4.15.4",
-    "jsonfile": "^2.4.0",
-    "ws": "^1.1.4"
+    "codemirror": "^6.0.2",
+    "dayjs": "^1.11.19",
+    "express": "^5.2.1",
+    "ws": "^8.19.0",
+    "y-codemirror.next": "^0.3.5",
+    "y-websocket": "^1.5.4",
+    "yjs": "^13"
+  },
+  "devDependencies": {
+    "vite": "^7.3.1"
   }
 }

@@ -1,90 +1,40 @@
-var jsonfile = require('jsonfile')
-var jsonDB = "clipboard.json"
+import { readFileSync, writeFileSync } from 'fs'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
+import express from 'express'
+import { WebSocketServer } from 'ws'
+import { createRequire } from 'module'
+const require = createRequire(import.meta.url)
+const Y = require('yjs')
+const { setupWSConnection, setPersistence, docs } = require('y-websocket/bin/utils')
 
-///////////////////////
-// WebSocket Server //
-/////////////////////
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
-var WebSocketServer = require('ws').Server
-var wss = new WebSocketServer({ port: 9873 })
-var clientsArr = []
-var clipboardObj = {}
+const DOC_NAME = 'clipboard'
+const DB_FILE = join(__dirname, 'clipboard.bin')
 
-wss.on('connection', client => {
-    clientsArr.push(client)
-    if(clipboardObj['clipboard'] == undefined) { // will be executed only once at the beginning
+setPersistence({
+    bindState: (docName, ydoc) => {
         try {
-            clipboardObj = jsonfile.readFileSync(jsonDB)
-        } catch(e) {
-            clipboardObj['clipboard'] = null
-        }
-        client.send(clipboardObj['clipboard'])
-    }
-    else {
-        client.send(clipboardObj['clipboard'])
-    }
-    client.on('message', message => {
-        clipboardObj['clipboard'] = message
-        try {
-            jsonfile.writeFileSync(jsonDB, clipboardObj, { spaces: 4 })
-        } catch(e) {
-            console.error(e)
-        }
-        sendToAllExceptSender(message, client)
-    })
-    client.on('close', () => {
-        clientsArr = clientsArr.filter(clientX => clientX !== client)
-    })
+            Y.applyUpdate(ydoc, readFileSync(DB_FILE))
+        } catch (e) { if (e.code !== 'ENOENT') throw e }
+        ydoc.on('update', () => writeFileSync(DB_FILE, Buffer.from(Y.encodeStateAsUpdate(ydoc))))
+    },
+    writeState: () => Promise.resolve()
 })
 
-function sendToAllExceptSender(message, sender) {
-    for(var i=0; i < clientsArr.length; i++) {
-        if(clientsArr[i] !== sender) {
-            clientsArr[i].send(message)
-        }
-    }
-}
+const wss = new WebSocketServer({ port: 9873 })
+wss.on('connection', (ws, req) => setupWSConnection(ws, req, { docName: DOC_NAME }))
 
-//////////////////
-// Main Server //
-////////////////
+const app = express()
+app.use(express.static(join(__dirname, 'dist')))
+app.use(express.urlencoded({ extended: false, limit: '50mb' }))
 
-var express = require('express')
-var app = express()
-var bodyParser = require('body-parser')
-
-app.use(express.static(__dirname + '/public')) // houses "index.html"
-app.use(bodyParser.urlencoded({ extended: false, limit: '50mb' }))
-
-const WebSocket = require('ws')
-const ws = new WebSocket('ws://:9873')
-
-// POST /add-to-clipboard
 app.post('/add-to-clipboard', (req, res) => {
-    
-    try {
-        clipboardObj = jsonfile.readFileSync(jsonDB)
-    } catch(e) {
-        clipboardObj['clipboard'] = null
-    }
-
-    if(clipboardObj['clipboard'] != "") {
-        clipboardObj['clipboard'] = clipboardObj['clipboard'] + "\n\n" + req.body.data
-    }
-    else {
-        clipboardObj['clipboard'] = req.body.data
-    }
-
-    jsonfile.writeFile(jsonDB, clipboardObj, { spaces: 4 }, err => {
-        if(!err) {
-            res.send("Added to Shared Clipboard!")
-            ws.send(clipboardObj['clipboard'])
-        }
-        else {
-            res.send("Failed to add to Shared Clipboard!")
-        }
-    })
-
+    const yText = docs.get(DOC_NAME)?.getText('codemirror')
+    if (!yText || !req.body.data) { res.status(400).send('Bad request'); return }
+    yText.insert(yText.length, (yText.length > 0 ? '\n\n' : '') + req.body.data)
+    res.send('Added to Shared Clipboard!')
 })
 
 app.listen(9872)

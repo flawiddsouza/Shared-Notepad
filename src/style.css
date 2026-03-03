@@ -1,0 +1,55 @@
+body {
+    margin: 1em;
+    background-color: white;
+    font-family: Arial, serif;
+    font-size: 1em;
+    height: 98vh;
+    margin-bottom: 0;
+}
+
+#editor {
+    height: 87%;
+}
+
+#editor .cm-editor {
+    height: 100%;
+    font-size: 1.2em;
+    border: 1px solid #767676;
+    background-color: white;
+}
+
+#editor .cm-editor.cm-focused {
+    outline: none;
+}
+
+#editor .cm-content {
+    font-family: monospace;
+    padding: 2px;
+}
+
+#editor .cm-scroller {
+    overflow: auto;
+}
+
+p {
+    display: inline-block;
+}
+
+button {
+    padding: 0.5em;
+    margin-right: 0.5em;
+}
+
+/* Moto G */
+@media screen and (device-width: 360px) and (device-height: 640px) and (-webkit-device-pixel-ratio: 2) {
+    body { height: 92vh; }
+    #editor { height: 70%; }
+    button { margin-bottom: 1em; }
+}
+
+/* OnePlus 6 */
+@media only screen and (max-width: 1080px) and (max-height: 1920px) {
+    body { height: 92vh; }
+    #editor { height: 75%; }
+    button { margin-bottom: 1em; }
+}
