@@ -101,9 +101,92 @@ function deleteTab(tabId) {
 function renderTabs() {
     const bar = document.getElementById('tab-bar')
     bar.innerHTML = ''
-    tabOrder.forEach(id => {
+
+    tabOrder.forEach((id, idx) => {
         const tab = document.createElement('div')
         tab.className = 'tab' + (id === activeTabId ? ' active' : '')
+
+        let wasDragged = false
+
+        tab.addEventListener('pointerdown', e => {
+            if (e.button !== 0) return
+            tab.setPointerCapture(e.pointerId)
+            const rect = tab.getBoundingClientRect()
+            const offsetX = e.clientX - rect.left
+            const offsetY = e.clientY - rect.top
+            const startX = e.clientX
+            const startY = e.clientY
+
+            // Cache natural midpoints before any transforms are applied
+            const tabEls = [...bar.querySelectorAll('.tab')]
+            const naturalMids = tabEls.map(el => {
+                const r = el.getBoundingClientRect()
+                return r.left + r.width / 2
+            })
+            const draggedW = tab.offsetWidth + 2  // width + gap
+
+            let ghost = null
+            let dropTargetIdx = idx
+
+            const onMove = ev => {
+                if (!ghost && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return
+
+                if (!ghost) {
+                    wasDragged = true
+                    ghost = tab.cloneNode(true)
+                    ghost.classList.add('tab-ghost')
+                    ghost.style.width = tab.offsetWidth + 'px'
+                    document.body.appendChild(ghost)
+                    tab.classList.add('tab-dragging')
+                    // Enable transition only on siblings, not the dragged tab
+                    tabEls.forEach(el => {
+                        if (el !== tab) el.style.transition = 'transform 0.12s ease'
+                    })
+                }
+
+                ghost.style.left = (ev.clientX - offsetX) + 'px'
+                ghost.style.top = (ev.clientY - offsetY) + 'px'
+
+                // Use natural midpoints so hit-testing doesn't react to its own transforms
+                dropTargetIdx = tabEls.length
+                for (let i = 0; i < naturalMids.length; i++) {
+                    if (ev.clientX < naturalMids[i]) { dropTargetIdx = i; break }
+                }
+
+                // Slide siblings: close source gap, open destination gap
+                tabEls.forEach((tabEl, i) => {
+                    if (tabEl === tab) return
+                    const shift = (i >= dropTargetIdx ? draggedW : 0) - (i > idx ? draggedW : 0)
+                    tabEl.style.transform = shift ? `translateX(${shift}px)` : ''
+                })
+            }
+
+            const onUp = () => {
+                tab.removeEventListener('pointermove', onMove)
+                tab.removeEventListener('pointerup', onUp)
+                tab.removeEventListener('pointercancel', onUp)
+                if (!ghost) return
+                ghost.remove()
+                tab.classList.remove('tab-dragging')
+                tabEls.forEach(el => { el.style.transform = ''; el.style.transition = '' })
+                let insertAt = dropTargetIdx
+                if (insertAt > idx) insertAt--
+                if (insertAt !== idx) {
+                    const tabs = tabOrder.toArray()
+                    const [moved] = tabs.splice(idx, 1)
+                    tabs.splice(insertAt, 0, moved)
+                    metaDoc.transact(() => {
+                        tabOrder.delete(0, tabOrder.length)
+                        tabOrder.insert(0, tabs)
+                    })
+                }
+                setTimeout(() => { wasDragged = false }, 0)
+            }
+
+            tab.addEventListener('pointermove', onMove)
+            tab.addEventListener('pointerup', onUp)
+            tab.addEventListener('pointercancel', onUp)
+        })
 
         const name = document.createElement('span')
         name.textContent = tabNames.get(id) || id
@@ -121,7 +204,7 @@ function renderTabs() {
             tab.appendChild(x)
         }
 
-        tab.addEventListener('click', () => switchTab(id))
+        tab.addEventListener('click', () => { if (!wasDragged) switchTab(id) })
         bar.appendChild(tab)
     })
 
