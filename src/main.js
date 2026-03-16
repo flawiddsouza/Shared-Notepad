@@ -190,11 +190,12 @@ function renderTabs() {
 
         const name = document.createElement('span')
         name.textContent = tabNames.get(id) || id
-        name.addEventListener('dblclick', () => {
+        tab.appendChild(name)
+        tab.addEventListener('dblclick', e => {
+            e.stopPropagation()
             const n = prompt('Tab name:', tabNames.get(id) || id)
             if (n?.trim()) tabNames.set(id, n.trim())
         })
-        tab.appendChild(name)
 
         if (tabOrder.length > 1) {
             const x = document.createElement('span')
