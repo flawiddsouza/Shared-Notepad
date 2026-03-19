@@ -1,9 +1,20 @@
 import './style.css'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
-import { EditorView, minimalSetup } from 'codemirror'
-import { yCollab } from 'y-codemirror.next'
+import { EditorView } from '@codemirror/view'
+import { highlightSpecialChars, drawSelection, keymap } from '@codemirror/view'
+import { defaultKeymap } from '@codemirror/commands'
+import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
+import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 import dayjs from 'dayjs'
+
+// minimalSetup minus history() and historyKeymap — yCollab's Y.UndoManager handles undo
+const editorSetup = [
+    highlightSpecialChars(),
+    drawSelection(),
+    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    keymap.of([...defaultKeymap, ...yUndoManagerKeymap]),
+]
 
 const WS_URL = 'ws://' + location.hostname + ':9873'
 
@@ -55,7 +66,7 @@ function createEditor(tabId) {
     })
 
     view = new EditorView({
-        extensions: [minimalSetup, EditorView.lineWrapping, yCollab(yText, remoteOnlyAwareness)],
+        extensions: [...editorSetup, EditorView.lineWrapping, yCollab(yText, remoteOnlyAwareness)],
         parent: document.getElementById('editor')
     })
 
