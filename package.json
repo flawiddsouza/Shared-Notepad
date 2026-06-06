@@ -10,11 +10,15 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "start": "node app.js"
+    "start": "node app.js",
+    "test": "node --test"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1063.0",
+    "@aws-sdk/s3-request-presigner": "^3.1063.0",
     "codemirror": "^6.0.2",
     "dayjs": "^1.11.19",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "ws": "^8.19.0",
     "y-codemirror.next": "^0.3.5",

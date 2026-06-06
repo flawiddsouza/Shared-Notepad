@@ -120,3 +120,11 @@ button {
 @media only screen and (max-width: 1080px) and (max-height: 1920px) {
     button { margin-bottom: 1em; }
 }
+
+.cm-image img {
+    display: inline-block;
+    vertical-align: top;
+    max-width: 100%;
+    height: auto;
+    cursor: pointer;
+}

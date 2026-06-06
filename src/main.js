@@ -2,11 +2,13 @@ import './style.css'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { EditorView } from '@codemirror/view'
-import { highlightSpecialChars, drawSelection, keymap } from '@codemirror/view'
+import { highlightSpecialChars, drawSelection, keymap, Decoration, WidgetType, ViewPlugin } from '@codemirror/view'
 import { defaultKeymap } from '@codemirror/commands'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 import dayjs from 'dayjs'
+import { RangeSetBuilder } from '@codemirror/state'
+import { findImageRefs } from '../lib/images.js'
 
 // minimalSetup minus history() and historyKeymap — yCollab's Y.UndoManager handles undo
 const editorSetup = [
@@ -41,6 +43,43 @@ const beforeClear = {}
 
 const status = document.getElementsByTagName('p')['status']
 
+class ImageWidget extends WidgetType {
+    constructor(url) { super(); this.url = url }
+    eq(other) { return other.url === this.url }
+    toDOM(view) {
+        const wrap = document.createElement('span')
+        wrap.className = 'cm-image'
+        const img = document.createElement('img')
+        img.src = this.url
+        img.addEventListener('load', () => view.requestMeasure())
+        img.addEventListener('click', () => window.open(this.url, '_blank'))
+        wrap.appendChild(img)
+        return wrap
+    }
+    ignoreEvent() { return false }
+}
+
+function buildImageDecorations(view) {
+    const builder = new RangeSetBuilder()
+    for (const { from, to } of view.visibleRanges) {
+        const text = view.state.doc.sliceString(from, to)
+        for (const ref of findImageRefs(text)) {
+            builder.add(from + ref.from, from + ref.to, Decoration.replace({ widget: new ImageWidget(ref.url) }))
+        }
+    }
+    return builder.finish()
+}
+
+const imageDecorations = ViewPlugin.fromClass(class {
+    constructor(view) { this.decorations = buildImageDecorations(view) }
+    update(update) {
+        if (update.docChanged || update.viewportChanged) this.decorations = buildImageDecorations(update.view)
+    }
+}, {
+    decorations: v => v.decorations,
+    provide: plugin => EditorView.atomicRanges.of(view => view.plugin(plugin)?.decorations || Decoration.none),
+})
+
 function createEditor(tabId) {
     if (view) { view.destroy(); view = null }
     if (provider) { provider.destroy(); provider = null }
@@ -66,12 +105,13 @@ function createEditor(tabId) {
     })
 
     view = new EditorView({
-        extensions: [...editorSetup, EditorView.lineWrapping, yCollab(yText, remoteOnlyAwareness)],
+        extensions: [...editorSetup, EditorView.lineWrapping, imageInput, imageDecorations, yCollab(yText, remoteOnlyAwareness)],
         parent: document.getElementById('editor')
     })
 
     provider.on('status', ({ status: s }) => {
-        status.innerText = 'Status: ' + (s === 'connected' ? 'Connected' : s === 'disconnected' ? 'Disconnected' : 'Connecting...')
+        lastStatus = 'Status: ' + (s === 'connected' ? 'Connected' : s === 'disconnected' ? 'Disconnected' : 'Connecting...')
+        status.innerText = lastStatus
     })
 
     activeTabId = tabId
@@ -248,6 +288,78 @@ if (metaProvider.synced) {
 tabOrder.observe(renderTabs)
 tabNames.observe(renderTabs)
 
+let lastStatus = 'Status: Ready'
+
+async function uploadImage(file) {
+    status.innerText = 'Status: Uploading image...'
+    try {
+        const res = await fetch('/upload', {
+            method: 'POST',
+            body: file,
+            headers: { 'content-type': file.type },
+        })
+        if (!res.ok) throw new Error(await res.text())
+        const { url } = await res.json()
+        status.innerText = lastStatus
+        return url
+    } catch (e) {
+        status.innerText = 'Status: Image upload failed - ' + e.message
+        return null
+    }
+}
+
+function insertImageAt(url, pos) {
+    // Put the image on its own line with a trailing blank line, so the caret
+    // lands below it and there's always a navigable line after the image.
+    const line = view.state.doc.lineAt(pos)
+    const prefix = pos === line.from ? '' : '\n'
+    const md = `${prefix}![](${url})\n`
+    view.dispatch({
+        changes: { from: pos, to: pos, insert: md },
+        selection: { anchor: pos + md.length },
+    })
+    view.focus()
+}
+
+async function handleImageFiles(files, dropPos) {
+    const targetTab = activeTabId
+    let first = true
+    for (const file of files) {
+        if (!file.type.startsWith('image/')) continue
+        const url = await uploadImage(file)
+        if (!url) continue
+        // The editor is rebuilt on tab switch; don't insert into the wrong doc.
+        if (activeTabId !== targetTab) {
+            status.innerText = 'Status: Image upload canceled - tab changed'
+            return
+        }
+        const pos = first && dropPos != null ? dropPos : view.state.selection.main.head
+        insertImageAt(url, pos)
+        first = false
+    }
+}
+
+const imageInput = EditorView.domEventHandlers({
+    paste(event) {
+        const files = [...(event.clipboardData?.items || [])]
+            .filter(i => i.kind === 'file' && i.type.startsWith('image/'))
+            .map(i => i.getAsFile())
+            .filter(Boolean)
+        if (files.length === 0) return false
+        event.preventDefault()
+        handleImageFiles(files)
+        return true
+    },
+    drop(event, view) {
+        const files = [...(event.dataTransfer?.files || [])].filter(f => f.type.startsWith('image/'))
+        if (files.length === 0) return false
+        event.preventDefault()
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+        handleImageFiles(files, pos ?? undefined)
+        return true
+    },
+})
+
 function insert(text) {
     const { from, to } = view.state.selection.main
     view.dispatch({
@@ -283,4 +395,11 @@ document.getElementsByTagName('button')['insert-date-time'].addEventListener('cl
 document.addEventListener('keydown', e => {
     if (e.key === 'F11') { e.preventDefault(); insert(`(${dayjs().format('h:mm A')}) `) }
     if (e.key === 'F12') { e.preventDefault(); insert(dayjs().format('DD-MMM-YY h:mm A') + ': ') }
+})
+
+const imageFileInput = document.getElementsByName('image-file')[0]
+document.getElementsByTagName('button')['insert-image'].addEventListener('click', () => imageFileInput.click())
+imageFileInput.addEventListener('change', () => {
+    if (imageFileInput.files.length) handleImageFiles([...imageFileInput.files])
+    imageFileInput.value = ''
 })
