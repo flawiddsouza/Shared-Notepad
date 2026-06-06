@@ -128,3 +128,68 @@ button {
     height: auto;
     cursor: pointer;
 }
+
+.cm-image-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    padding: 1px 4px 1px 6px;
+    border: 1px solid #c0c0c0;
+    border-radius: 10px;
+    background: #f0f0f0;
+    font-family: Arial, sans-serif;
+    font-size: 0.85em;
+    line-height: 1.4;
+    cursor: pointer;
+    vertical-align: baseline;
+}
+
+.cm-image-chip:hover {
+    background: #e4e4e4;
+}
+
+.cm-image-chip .chip-icon {
+    flex-shrink: 0;
+}
+
+.cm-image-chip .chip-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 24ch;
+}
+
+.cm-image-chip .chip-copy {
+    flex-shrink: 0;
+    margin: 0;
+    padding: 0 4px;
+    border: 1px solid #c0c0c0;
+    border-radius: 8px;
+    background: #fff;
+    font-size: 0.9em;
+    line-height: 1.4;
+    cursor: pointer;
+}
+
+.cm-image-chip .chip-copy:hover {
+    background: #d8d8d8;
+}
+
+.image-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.75);
+    cursor: zoom-out;
+}
+
+.image-modal img {
+    max-width: 92vw;
+    max-height: 92vh;
+    object-fit: contain;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}

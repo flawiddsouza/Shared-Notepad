@@ -87,6 +87,17 @@ app.get('/img/:key', async (req, res) => {
         return
     }
     try {
+        // ?proxy streams the bytes through this origin so the browser can fetch
+        // them without CORS (Backblaze sends no Access-Control-Allow-Origin).
+        // Used by the chip's "copy image to clipboard" action.
+        if (req.query.proxy !== undefined) {
+            const out = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: objectKey(key) }))
+            res.set('Cache-Control', 'no-store')
+            if (out.ContentType) res.set('Content-Type', out.ContentType)
+            out.Body.on('error', err => { console.error('Image proxy stream failed:', err); res.destroy(err) })
+            out.Body.pipe(res)
+            return
+        }
         const url = await getSignedUrl(
             s3,
             new GetObjectCommand({ Bucket: BUCKET, Key: objectKey(key) }),

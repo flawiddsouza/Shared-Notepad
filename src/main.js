@@ -7,7 +7,7 @@ import { defaultKeymap } from '@codemirror/commands'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 import dayjs from 'dayjs'
-import { RangeSetBuilder } from '@codemirror/state'
+import { RangeSetBuilder, StateEffect } from '@codemirror/state'
 import { findImageRefs } from '../lib/images.js'
 
 // minimalSetup minus history() and historyKeymap — yCollab's Y.UndoManager handles undo
@@ -43,16 +43,125 @@ const beforeClear = {}
 
 const status = document.getElementsByTagName('p')['status']
 
+// Render images inline as <img>, or as compact chips. Saved per browser.
+let chipMode = localStorage.getItem('chipMode') === '1'
+const setChipMode = StateEffect.define()
+
+function filenameFromUrl(url) {
+    try { return decodeURIComponent(url.split('?')[0].split('/').pop()) || url }
+    catch { return url.split('?')[0].split('/').pop() || url }
+}
+
+function openImageModal(url) {
+    const overlay = document.createElement('div')
+    overlay.className = 'image-modal'
+    const img = document.createElement('img')
+    img.src = url
+    overlay.appendChild(img)
+    const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey) }
+    const onKey = e => { if (e.key === 'Escape') close() }
+    overlay.addEventListener('click', close)
+    document.addEventListener('keydown', onKey)
+    document.body.appendChild(overlay)
+}
+
+function blobToPng(blob) {
+    return createImageBitmap(blob).then(bitmap => new Promise((resolve, reject) => {
+        const canvas = document.createElement('canvas')
+        canvas.width = bitmap.width
+        canvas.height = bitmap.height
+        canvas.getContext('2d').drawImage(bitmap, 0, 0)
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('encode failed')), 'image/png')
+    }))
+}
+
+// Copy plain text. Uses the async Clipboard API when available, else the legacy
+// execCommand path, which (unlike image copy) still works over plain http.
+async function copyText(text) {
+    try {
+        if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); return true }
+    } catch { /* fall through to execCommand */ }
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0'
+    document.body.appendChild(ta)
+    ta.select()
+    let ok = false
+    try { ok = document.execCommand('copy') } catch { /* ignore */ }
+    ta.remove()
+    return ok
+}
+
+async function copyImageToClipboard(url) {
+    // /img/<key> redirects to Backblaze, which has no CORS headers, so a
+    // direct fetch is blocked. ?proxy streams the bytes via our own origin.
+    const fetchUrl = url.startsWith('/img/')
+        ? url + (url.includes('?') ? '&' : '?') + 'proxy=1'
+        : url
+    // Copying actual image bytes requires the async Clipboard API, which only
+    // exists in a secure context (HTTPS or localhost).
+    if (navigator.clipboard?.write && window.ClipboardItem) {
+        try {
+            const blob = await (await fetch(fetchUrl)).blob()
+            const png = blob.type === 'image/png' ? blob : await blobToPng(blob)
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+            return true
+        } catch (e) {
+            status.innerText = 'Status: Copy failed - ' + e.message
+            // fall through to copying the URL instead
+        }
+    }
+    // Can't copy the image itself - copy a shareable URL as text instead.
+    const linkUrl = new URL(url.split('?')[0], location.href).href
+    if (await copyText(linkUrl)) {
+        status.innerText = 'Status: Copied image URL (image copy needs HTTPS/localhost)'
+        return true
+    }
+    status.innerText = 'Status: Copy failed'
+    return false
+}
+
+function buildChip(url) {
+    const chip = document.createElement('span')
+    chip.className = 'cm-image-chip'
+    chip.title = 'Click to open'
+
+    const icon = document.createElement('span')
+    icon.className = 'chip-icon'
+    icon.textContent = '🖼'
+
+    const label = document.createElement('span')
+    label.className = 'chip-label'
+    label.textContent = filenameFromUrl(url)
+
+    const copy = document.createElement('button')
+    copy.className = 'chip-copy'
+    copy.title = 'Copy image to clipboard'
+    copy.textContent = '⧉'
+    copy.addEventListener('click', async e => {
+        e.stopPropagation()
+        copy.textContent = '…'
+        const ok = await copyImageToClipboard(url)
+        copy.textContent = ok ? '✓' : '✗'
+        setTimeout(() => { copy.textContent = '⧉' }, 1200)
+    })
+
+    chip.append(icon, label, copy)
+    chip.addEventListener('click', () => openImageModal(url))
+    return chip
+}
+
 class ImageWidget extends WidgetType {
-    constructor(url) { super(); this.url = url }
-    eq(other) { return other.url === this.url }
+    constructor(url, chip) { super(); this.url = url; this.chip = chip }
+    eq(other) { return other.url === this.url && other.chip === this.chip }
     toDOM(view) {
+        if (this.chip) return buildChip(this.url)
         const wrap = document.createElement('span')
         wrap.className = 'cm-image'
         const img = document.createElement('img')
         img.src = this.url
         img.addEventListener('load', () => view.requestMeasure())
-        img.addEventListener('click', () => window.open(this.url, '_blank'))
+        img.addEventListener('click', () => openImageModal(this.url))
         wrap.appendChild(img)
         return wrap
     }
@@ -64,7 +173,7 @@ function buildImageDecorations(view) {
     for (const { from, to } of view.visibleRanges) {
         const text = view.state.doc.sliceString(from, to)
         for (const ref of findImageRefs(text)) {
-            builder.add(from + ref.from, from + ref.to, Decoration.replace({ widget: new ImageWidget(ref.url) }))
+            builder.add(from + ref.from, from + ref.to, Decoration.replace({ widget: new ImageWidget(ref.url, chipMode) }))
         }
     }
     return builder.finish()
@@ -73,7 +182,9 @@ function buildImageDecorations(view) {
 const imageDecorations = ViewPlugin.fromClass(class {
     constructor(view) { this.decorations = buildImageDecorations(view) }
     update(update) {
-        if (update.docChanged || update.viewportChanged) this.decorations = buildImageDecorations(update.view)
+        if (update.docChanged || update.viewportChanged ||
+            update.transactions.some(tr => tr.effects.some(e => e.is(setChipMode))))
+            this.decorations = buildImageDecorations(update.view)
     }
 }, {
     decorations: v => v.decorations,
@@ -395,6 +506,16 @@ document.getElementsByTagName('button')['insert-date-time'].addEventListener('cl
 document.addEventListener('keydown', e => {
     if (e.key === 'F11') { e.preventDefault(); insert(`(${dayjs().format('h:mm A')}) `) }
     if (e.key === 'F12') { e.preventDefault(); insert(dayjs().format('DD-MMM-YY h:mm A') + ': ') }
+})
+
+const chipToggle = document.getElementsByTagName('button')['toggle-chips']
+const updateChipToggleLabel = () => { chipToggle.textContent = chipMode ? 'Show Images' : 'Show as Chips' }
+updateChipToggleLabel()
+chipToggle.addEventListener('click', () => {
+    chipMode = !chipMode
+    localStorage.setItem('chipMode', chipMode ? '1' : '0')
+    updateChipToggleLabel()
+    view?.dispatch({ effects: setChipMode.of(chipMode) })
 })
 
 const imageFileInput = document.getElementsByName('image-file')[0]
