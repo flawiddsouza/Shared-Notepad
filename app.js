@@ -1,11 +1,12 @@
-import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import 'dotenv/config'
 import { randomUUID } from 'crypto'
-import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { extFromMime, extractImageKeys } from './lib/images.js'
+import { extFromMime } from './lib/images.js'
+import { createImageCleanup } from './lib/image-cleanup.js'
 import express from 'express'
 import { WebSocketServer } from 'ws'
 import { createRequire } from 'module'
@@ -36,13 +37,19 @@ const s3 = new S3Client({
     responseChecksumValidation: 'WHEN_REQUIRED',
 })
 
+const imageCleanup = createImageCleanup({ s3, bucket: BUCKET, folder: FOLDER, dataDir: DATA_DIR, docs })
+
 setPersistence({
     bindState: (docName, ydoc) => {
         const dbFile = join(DATA_DIR, docName.replace(/[^a-zA-Z0-9-_]/g, '_') + '.bin')
         try {
             Y.applyUpdate(ydoc, readFileSync(dbFile))
         } catch (e) { if (e.code !== 'ENOENT') throw e }
-        ydoc.on('update', () => writeFileSync(dbFile, Buffer.from(Y.encodeStateAsUpdate(ydoc))))
+        imageCleanup.noteReferences(ydoc.getText('codemirror').toString())
+        ydoc.on('update', () => {
+            writeFileSync(dbFile, Buffer.from(Y.encodeStateAsUpdate(ydoc)))
+            imageCleanup.noteReferences(ydoc.getText('codemirror').toString())
+        })
     },
     writeState: () => Promise.resolve()
 })
@@ -111,49 +118,6 @@ app.get('/img/:key', async (req, res) => {
     }
 })
 
-const ORPHAN_GRACE_MS = 60 * 60 * 1000 // 1 hour
-
-async function sweepOrphans() {
-    if (!BUCKET) return
-    if (!FOLDER) {
-        console.warn('B2_BUCKET_FOLDER not set - skipping orphan sweep to avoid scanning the whole bucket')
-        return
-    }
-    // Collect every referenced image key across all persisted docs.
-    const referenced = new Set()
-    for (const file of readdirSync(DATA_DIR)) {
-        if (!file.endsWith('.bin')) continue
-        const doc = new Y.Doc()
-        try {
-            Y.applyUpdate(doc, readFileSync(join(DATA_DIR, file)))
-            for (const key of extractImageKeys(doc.getText('codemirror').toString())) {
-                referenced.add(objectKey(key))
-            }
-        } catch (e) {
-            // Can't read a doc -> reference set is incomplete. Deleting on a
-            // partial set could remove a still-referenced image, so abort the
-            // sweep rather than risk data loss.
-            console.error('Orphan sweep aborted - unreadable doc:', file, e)
-            return
-        } finally {
-            doc.destroy()
-        }
-    }
-    // Delete bucket objects that are unreferenced and older than the grace period.
-    const cutoff = Date.now() - ORPHAN_GRACE_MS
-    let token
-    do {
-        const out = await s3.send(new ListObjectsV2Command({ Bucket: BUCKET, Prefix: `${FOLDER}/`, ContinuationToken: token }))
-        for (const obj of out.Contents || []) {
-            if (referenced.has(obj.Key)) continue
-            if (obj.LastModified && obj.LastModified.getTime() > cutoff) continue
-            await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: obj.Key }))
-            console.log('Swept orphan image:', obj.Key)
-        }
-        token = out.IsTruncated ? out.NextContinuationToken : undefined
-    } while (token)
-}
-
-sweepOrphans().catch(e => console.error('Orphan sweep failed:', e))
+imageCleanup.start()
 
 app.listen(9872)

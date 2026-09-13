@@ -91,6 +91,7 @@ body {
 #editor .cm-content {
     font-family: monospace;
     padding: 2px;
+    padding-top: 0.5em;
 }
 
 #editor .cm-scroller {
